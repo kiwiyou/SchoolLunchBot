@@ -1,71 +1,78 @@
-﻿using System;
-using System.Collections.Generic;
-using SchoolFinder;
+﻿using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading.Tasks;
+using System.Web;
 
 namespace SchoolLunch.Bot
 {
-    internal static class SchoolUtil
+    public static class Schools
     {
-        private static readonly Dictionary<Regions, string> RegionName = new Dictionary<Regions, string>
+        public static async Task<ICollection<SchoolInfo>> FindAsync(string name)
         {
-            { Regions.Seoul, "서울" },
-            { Regions.Incheon, "인천" },
-            { Regions.Busan, "부산" },
-            { Regions.Gwangju, "광주" },
-            { Regions.Daejeon, "대전" },
-            { Regions.Daegu, "대구" },
-            { Regions.Sejong, "세종" },
-            { Regions.Ulsan, "울산" },
-            { Regions.Gyeonggi, "경기" },
-            { Regions.Kangwon, "강원" },
-            { Regions.Chungbuk, "충북" },
-            { Regions.Chungnam, "충남" },
-            { Regions.Gyeongbuk, "경북" },
-            { Regions.Gyeongnam, "경남" },
-            { Regions.Jeonbuk, "전북" },
-            { Regions.Jeonnam, "전남" },
-            { Regions.Jeju, "제주" }
-        };
-        private static readonly Dictionary<string, Regions> NameRegion = new Dictionary<string, Regions>
-        {
-            { "서울", Regions.Seoul },
-            { "인천", Regions.Incheon },
-            { "부산", Regions.Busan },
-            { "광주", Regions.Gwangju },
-            { "대전", Regions.Daejeon },
-            { "대구", Regions.Daegu },
-            { "세종", Regions.Sejong },
-            { "울산", Regions.Ulsan },
-            { "경기", Regions.Gyeonggi },
-            { "강원", Regions.Kangwon },
-            { "충북", Regions.Chungbuk },
-            { "충남", Regions.Chungnam },
-            { "경북", Regions.Gyeongbuk },
-            { "경남", Regions.Gyeongnam },
-            { "전북", Regions.Jeonbuk },
-            { "전남", Regions.Jeonnam },
-            { "제주", Regions.Jeju }
-        };
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+            var encodedName = HttpUtility.UrlEncode(name, Encoding.GetEncoding("euc-kr"));
+            var param = new StringBuilder()
+                .AppendFormat("&SEARCH_SCHUL_NM={0}", encodedName)
+                .AppendFormat("&SEARCH_KEYWORD={0}", encodedName);
+            var rawParam = Encoding.UTF8.GetBytes(param.ToString());
+            var request = WebRequest.CreateHttp("http://www.schoolinfo.go.kr/ei/ss/Pneiss_f01_l0.do");
+            request.Method = "POST";
+            request.ContentType = "application/x-www-form-urlencoded";
+            request.ContentLength = rawParam.LongLength;
+                using (var reqStream = request.GetRequestStream())
+                    reqStream.Write(rawParam, 0, rawParam.Length);
+            string body;
+            var response = await request.GetResponseAsync();
+            var resStream = response.GetResponseStream();
+            if (resStream == null)
+                return null;
+            try
+            {
+                using (var reader = new StreamReader(resStream, Encoding.Default))
+                    body = await reader.ReadToEndAsync();
+            }
+            catch (IOException)
+            {
+                return null;
+            }
 
-        public static string GetRegionName(Regions region)
-        {
-            return RegionName[region];
+            var list = new List<SchoolInfo>();
+            while (true)
+            {
+                body = body.Substring(body.IndexOf("School_Name") + 76);
+                var schoolName = body.Substring(0, body.IndexOf("<"));
+                if (!HasKorean(schoolName))
+                    break;
+                body = body.Substring(body.IndexOf("searchSchul") + 13);
+                var code = body.Substring(0, body.IndexOf("'"));
+                body = body.Substring(body.IndexOf("학교주소") + 11);
+                var address = body.Substring(0, body.IndexOf("<"));
+                list.Add(new SchoolInfo(schoolName, code, address));
+            }
+            return list;
         }
 
-        public static Regions GetRegion(string name)
+        private static bool HasKorean(string str)
         {
-            return NameRegion[name];
+            return str.Any(c => '가' <= c && '힣' >= c);
         }
+    }
 
-        public static SchoolTypes GetSchoolType(string schoolName)
+    public class SchoolInfo
+    {
+        public string Name { get; }
+        public string Code { get; }
+        public string Address { get; }
+
+        public SchoolInfo(string name, string code, string address)
         {
-            if (schoolName.EndsWith("초등학교") || schoolName.EndsWith("초"))
-                return SchoolTypes.Elementary;
-            if (schoolName.EndsWith("중학교") || schoolName.EndsWith("중"))
-                return SchoolTypes.Middle;
-            if (schoolName.EndsWith("고등학교") || schoolName.EndsWith("고"))
-                return SchoolTypes.High;
-            throw new ArgumentException("잘못된 학교명입니다.");
+            Name = name;
+            Code = code;
+            Address = address;
         }
     }
 }

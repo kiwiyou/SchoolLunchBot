@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.Linq;
 using System.Threading.Tasks;
 using NLog;
-using SchoolFinder;
 using Telegram.Bot;
 using Telegram.Bot.Args;
 using Telegram.Bot.Types;
@@ -20,10 +18,7 @@ namespace SchoolLunch.Bot
         private static readonly ITelegramBotClient Client =
             new TelegramBotClient(ConfigurationManager.AppSettings["BotToken"]);
 
-        private static readonly SchoolSearch SchoolFinder = new SchoolSearch();
-
         private static readonly Dictionary<int, UserState> UserStates = new Dictionary<int, UserState>();
-        private static readonly Dictionary<int, Regions> TempUserRegion = new Dictionary<int, Regions>();
 
         private static void Main(string[] args)
         {
@@ -62,103 +57,75 @@ namespace SchoolLunch.Bot
 
             if (message.Text.StartsWith("/start"))
             {
+                Logger.Info("/start - User {0}", fromId);
                 await Client.SendChatActionAsync(chatId, ChatAction.Typing);
                 await Client.SendTextMessageAsync(chatId, "급식을 검색할 수 있는 봇입니다!" +
                                                                    "`/help`를 쳐보세요!",
                     replyToMessageId: message.MessageId, parseMode: ParseMode.Markdown);
-
-                Logger.Info("/start - User {0}", fromId);
             } else if (message.Text.StartsWith("/help"))
             {
+                Logger.Info("/help - User {0}", fromId);
                 await Client.SendChatActionAsync(chatId, ChatAction.Typing);
                 await Client.SendTextMessageAsync(chatId, "`/학교검색` - 학교 코드를 검색합니다.",
                     replyToMessageId: message.MessageId, parseMode: ParseMode.Markdown);
-                Logger.Info("/help - User {0}", fromId);
+            } else if (message.Text.StartsWith("/취소"))
+            {
+                if (!UserStates.Remove(fromId)) return;
+                Logger.Info("/취소 - User {0}", fromId);
+                await Client.SendChatActionAsync(chatId, ChatAction.Typing);
+                await Client.SendTextMessageAsync(chatId, "작업이 취소되었습니다.",
+                    replyToMessageId: message.MessageId);
             } else if (message.Text.StartsWith("/학교검색"))
             {
-                await RespondSchoolQuery(message);
                 Logger.Info("/학교검색 - User {0}", fromId);
+                await RequestSchoolName(message);
             }
             else if (UserStates.TryGetValue(fromId, out UserState state))
             {
                 switch (state)
                 {
-                    case UserState.RegionRequested:
-                        try
-                        {
-                            var region = SchoolUtil.GetRegion(message.Text);
-                            TempUserRegion.Add(fromId, region);
-                            await RequestSchoolName(message);
-                        }
-                        catch (KeyNotFoundException)
-                        {
-                            await RespondSchoolQuery(message);
-                        }
-                        break;
                     case UserState.SchoolNameRequested:
-                        try
+                        var name = message.Text;
+                        var candidates = await Schools.FindAsync(name);
+                        await Client.SendChatActionAsync(chatId, ChatAction.Typing);
+                        if (candidates == null)
                         {
-                            var name = message.Text;
-                            var type = SchoolUtil.GetSchoolType(name);
-                            var candidates = SchoolFinder.SearchSchool(type, TempUserRegion[fromId], name);
-                            await Client.SendChatActionAsync(chatId, ChatAction.Typing);
+                            await Client.SendTextMessageAsync(chatId, "학교를 찾을 수 없습니다.",
+                                replyToMessageId: message.MessageId);
+                        }
+                        else
+                        {
                             await Client.SendTextMessageAsync(chatId, $"총 {candidates.Count}곳의 학교를 찾았습니다.",
                                 replyToMessageId: message.MessageId);
                             foreach (var candidate in candidates)
                             {
                                 await Client.SendTextMessageAsync(chatId,
-                                    $"`학교명: {candidate.Name}`\n`주소: {candidate.Adress}`\n`코드: {candidate.Code}`",
+                                    $"학교명: `{candidate.Name}`\n" +
+                                    $"주소: `{candidate.Address}`\n" +
+                                    $"코드: `{candidate.Code}`",
                                     ParseMode.Markdown);
                             }
-                            UserStates.Remove(fromId);
                         }
-                        catch (ArgumentException)
-                        {
-                            await Client.SendChatActionAsync(chatId, ChatAction.Typing);
-                            await Client.SendTextMessageAsync(chatId, "잘못된 학교명입니다.",
-                                replyToMessageId: message.MessageId);
-                            await RequestSchoolName(message);
-                        }
+                        UserStates.Remove(fromId);
                         break;
                 }
             }
-        }
-
-        private static async Task RespondSchoolQuery(Message message)
-        {
-            var chatId = message.Chat.Id;
-            var fromId = message.From.Id;
-            await Client.SendChatActionAsync(chatId, ChatAction.Typing);
-            var regionKeyboard = new ReplyKeyboardMarkup(Enum.GetValues(typeof(Regions)).Cast<Regions>()
-                .Select(region => new KeyboardButton(SchoolUtil.GetRegionName(region))).ToArray())
-            {
-                OneTimeKeyboard = true,
-                ResizeKeyboard = true
-            };
-            await Client.SendTextMessageAsync(chatId, "지역을 선택해주세요.", replyToMessageId: message.MessageId,
-                replyMarkup: regionKeyboard);
-            
-            if (UserStates.ContainsKey(fromId))
-            {
-                UserStates[fromId] = UserState.RegionRequested;
-                TempUserRegion.Remove(fromId);
-            }
-            else
-                UserStates.Add(fromId, UserState.RegionRequested);
         }
 
         private static async Task RequestSchoolName(Message message)
         {
             await Client.SendChatActionAsync(message.Chat.Id, ChatAction.Typing);
             await Client.SendTextMessageAsync(message.Chat.Id, "학교명을 입력해주세요.",
-                replyToMessageId: message.MessageId, replyMarkup: new ForceReply());
+                replyToMessageId: message.MessageId, replyMarkup: new ForceReply
+                {
+                    Force = true
+                });
             UserStates[message.From.Id] = UserState.SchoolNameRequested;
         }
     }
 
     public enum UserState
     {
-        RegionRequested,
-        SchoolNameRequested,
+        SchoolNameRequested
     }
 }
