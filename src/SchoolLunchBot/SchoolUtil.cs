@@ -6,7 +6,7 @@ namespace SchoolLunch.Bot
 {
     internal static class SchoolUtil
     {
-        private static Dictionary<Regions, string> _regionName = new Dictionary<Regions, string>
+        private static readonly Dictionary<Regions, string> RegionName = new Dictionary<Regions, string>
         {
             { Regions.Seoul, "서울" },
             { Regions.Incheon, "인천" },
@@ -26,7 +26,7 @@ namespace SchoolLunch.Bot
             { Regions.Jeonnam, "전남" },
             { Regions.Jeju, "제주" }
         };
-        private static Dictionary<string, Regions> _nameRegion = new Dictionary<string, Regions>
+        private static readonly Dictionary<string, Regions> NameRegion = new Dictionary<string, Regions>
         {
             { "서울", Regions.Seoul },
             { "인천", Regions.Incheon },
@@ -49,12 +49,12 @@ namespace SchoolLunch.Bot
 
         public static string GetRegionName(Regions region)
         {
-            return _regionName[region];
+            return RegionName[region];
         }
 
         public static Regions GetRegion(string name)
         {
-            return _nameRegion[name];
+            return NameRegion[name];
         }
 
         public static SchoolTypes GetSchoolType(string schoolName)
