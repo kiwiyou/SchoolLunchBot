@@ -1,11 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Timers;
 using Telegram.Bot;
-using Telegram.Bot.Types;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types.Enums;
 
 namespace SchoolLunch.Bot
@@ -31,19 +27,26 @@ namespace SchoolLunch.Bot
             var now = DateTime.Now;
             if (now.Second != 0 || now.Minute != Minute || now.Hour != Hour) return;
             var school = _database.GetSchool(UserId);
-            if (school == null)
+            try
             {
-                await _bot.SendTextMessageAsync(ChatId, "`/저장` 명령어로 먼저 학교를 저장해주세요!", ParseMode.Markdown);
-                return;
+                if (school == null)
+                {
+                    await _bot.SendTextMessageAsync(ChatId, "`/저장` 명령어로 먼저 학교를 저장해주세요!", ParseMode.Markdown);
+                    return;
+                }
+                var lunches = await school.GetLunch(now.Year, now.Month);
+                if (lunches.TryGetValue(now.Day, out string lunch))
+                {
+                    await _bot.SendTextMessageAsync(ChatId, lunch);
+                }
+                else
+                {
+                    await _bot.SendTextMessageAsync(ChatId, "급식이 없습니다.");
+                }
             }
-            var lunches = await school.GetLunch(now.Year, now.Month);
-            if (lunches.TryGetValue(now.Day, out string lunch))
+            catch (ApiRequestException)
             {
-                await _bot.SendTextMessageAsync(ChatId, lunch);
-            }
-            else
-            {
-                await _bot.SendTextMessageAsync(ChatId, "급식이 없습니다.");
+                Enabled = false;
             }
         }
 

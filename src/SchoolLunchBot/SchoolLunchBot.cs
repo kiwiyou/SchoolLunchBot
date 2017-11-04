@@ -94,9 +94,9 @@ namespace SchoolLunch.Bot
             if (UserStates.TryGetValue(chosen.From.Id, out UserState state) &&
                 state == UserState.UseSavedSchoolRequested)
             {
+                await Client.DeleteMessageAsync(chosen.Message.Chat.Id, chosen.Message.MessageId);
                 if (chosen.Data == "yes")
                 {
-                    await Client.DeleteMessageAsync(chosen.Message.Chat.Id, chosen.Message.MessageId);
                     await RequestYear(chosen.Message.Chat, chosen.From);
                 }
                 else
