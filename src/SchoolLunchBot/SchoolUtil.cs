@@ -51,17 +51,21 @@ namespace SchoolLunch.Bot
                     break;
                 body = body.Substring(body.IndexOf("mapD_Area") + 15);
                 var office = ParseOffice(body.Substring(0, body.IndexOf("<")));
-                if (!office.HasValue)
-                    continue;
+                if (office == EducationOffice.None) continue;
                 body = body.Substring(body.IndexOf("mapD_Class") + 16);
                 var type = ParseType(body.Substring(0, body.IndexOf("<")));
-                if (!type.HasValue)
-                    continue;
+                if (type == SchoolType.None) continue;
                 body = body.Substring(body.IndexOf("searchSchul") + 13);
                 var code = body.Substring(0, body.IndexOf("'"));
                 body = body.Substring(body.IndexOf("학교주소") + 11);
                 var address = body.Substring(0, body.IndexOf("<"));
-                list.Add(new SchoolInfo(schoolName, code, type.Value, office.Value, address));
+                list.Add(new SchoolInfo {
+                    Name = schoolName,
+                    Code = code,
+                    Type = type,
+                    Office = office,
+                    Address = address
+                });
             }
             return list;
         }
@@ -71,7 +75,7 @@ namespace SchoolLunch.Bot
             return str.Any(c => '가' <= c && '힣' >= c);
         }
 
-        public static SchoolType? ParseType(string str)
+        public static SchoolType ParseType(string str)
         {
             switch (str)
             {
@@ -86,11 +90,11 @@ namespace SchoolLunch.Bot
                 case "기타":
                     return SchoolType.Etc;
                 default:
-                    return null;
+                    return SchoolType.None;
             }
         }
 
-        public static EducationOffice? ParseOffice(string region)
+        public static EducationOffice ParseOffice(string region)
         {
             switch (region)
             {
@@ -129,34 +133,25 @@ namespace SchoolLunch.Bot
                 case "경북":
                     return EducationOffice.Gyeongbuk;
                 default:
-                    return null;
+                    return EducationOffice.None;
             }
         }
     }
 
     public class SchoolInfo
     {
-        public string Name { get; }
-        public string Code { get; }
-        public SchoolType Type { get; }
-        public EducationOffice Office { get; }
-        public string Address { get; }
-
-        public SchoolInfo(string name, string code, SchoolType type, EducationOffice office, string address)
-        {
-            Name = name;
-            Code = code;
-            Type = type;
-            Office = office;
-            Address = address;
-        }
+        public string Name { get; set; }
+        public string Code { get; set; }
+        public SchoolType Type { get; set; }
+        public EducationOffice Office { get; set; }
+        public string Address { get; set; }
         
         public async Task<IDictionary<int, string>> GetLunch(int year, int month)
         {
             var addressBuilder = GetOfficeAddress(Office)
                 .AppendFormat(
                     "/sts_sci_md00_001.do?schulCode={0}&schulCrseScCode={1}&schulKndScCode=0{2}&ay={3}&mm={4:D2}&",
-                    Code, Convert.ToInt32(Type), Convert.ToInt32(Type), year, month);
+                    Code, Convert.ToInt32(Type) + 1, Convert.ToInt32(Type) + 1, year, month);
             string body;
             using (var web = new WebClient {Encoding = Encoding.UTF8})
                 body = await web.DownloadStringTaskAsync(addressBuilder.ToString());
@@ -168,15 +163,21 @@ namespace SchoolLunch.Bot
                 .Replace("<div>", "").Replace("</div>", "").Replace("<br />", "\n").Replace("</td>", "@").Trim();
 
             var contents = body.Split('@');
-            return contents.Select(content => content.Trim().Split(new[] {'\n'}, 2))
-                .Where(raw => raw.Length == 2)
-                .ToDictionary(raw => Convert.ToInt32(raw[0]), raw => ReformatLunch(raw[1]));
+            var result = new Dictionary<int, string>();
+            foreach (var content in contents)
+            {
+                var raw = content.Trim().Split(new[] {'\n'}, 2);
+                if (raw.Length != 2) continue;
+                if (int.TryParse(raw[0], out int day))
+                    result.Add(day, ReformatLunch(raw[1]));
+            }
+            return result;
         }
 
         private static readonly Regex RemoveRegex = new Regex("\\d{1,2}\\.|[sS]|\\*");
         private static string ReformatLunch(string lunch)
         {
-            return RemoveRegex.Replace(lunch, "");
+            return RemoveRegex.Replace(lunch.Replace("&amp;", "&"), "");
         }
 
         private static StringBuilder GetOfficeAddress(EducationOffice office)
@@ -242,7 +243,8 @@ namespace SchoolLunch.Bot
 
     public enum SchoolType
     {
-        Elementary = 2,
+        None,
+        Elementary,
         Middle,
         High,
         Etc
@@ -250,7 +252,8 @@ namespace SchoolLunch.Bot
 
     public enum EducationOffice
     {
-        Seoul,
+        None,
+        Seoul, 
         Incheon,
         Ulsan,
         Gangwon,
